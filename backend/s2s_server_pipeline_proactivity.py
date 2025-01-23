@@ -4,6 +4,7 @@ import time
 import os
 import re
 import logging
+import requests
 from openai import OpenAI
 from s2s_server_pipeline import LanguageModelAPIHandler
 import torch
@@ -29,6 +30,12 @@ file_handler.setFormatter(file_formatter)
 
 logger.addHandler(file_handler)
 logger.propagate = False
+
+
+class ReactionMode(Enum):
+    AGREE = 1
+    AGAINST = 2
+    SILENT = 3
 
 
 class Proactivity:
@@ -191,6 +198,22 @@ class Proactivity:
             res.append(chr(int(keylist[k], 16)))
         return res
 
+    def _call_judge_model(self, user_message):
+        client = OpenAI(api_key="0",base_url="http://0.0.0.0:8000/v1")
+        result = client.chat.completions.create(messages=user_message, model="meta-llama/Meta-Llama-3-8B-Instruct",max_tokens=2048)
+
+        pattern = r'\[(.*?)\]'
+        matches = re.findall(pattern, result)[0]
+
+        if matches == '是':
+            return ReactionMode.AGREE
+        elif matches == '否':
+            return ReactionMode.AGAINST
+        elif matches == '不说话':
+            return ReactionMode.SILENT
+        else:
+            return ReactionMode.SILENT
+
     def _scores_match_sentences(self, query_sentence):
         """get the score list of emojis for a specific query
 
@@ -248,7 +271,6 @@ class Proactivity:
             if self.embedding_model_name == 'online':
                 payload = {
                     "text": [query_sentence] + sentences,
-                    # "text": ['你好','你好好'],
                     "model": "bge-large-zh-v1.5"
                 }
                 headers = {
